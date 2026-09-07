@@ -55,6 +55,14 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+
+      - name: Debug GitHub context
+        run: |
+            echo "Repository: ${{ github.repository }}"
+            echo "Ref: ${{ github.ref }}"
+            echo "Event: ${{ github.event_name }}"
+            echo "Workflow ref: ${{ github.workflow_ref }}"
+
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
