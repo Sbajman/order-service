@@ -64,20 +64,20 @@ jobs:
             echo "Workflow ref: ${{ github.workflow_ref }}"
 
 
-      - name: Inspect OIDC token claims
-        shell: bash
-        run: |
-            TOKEN=$(curl -s \
-            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
-            | jq -r '.value')
+    #   - name: Inspect OIDC token claims
+    #     shell: bash
+    #     run: |
+    #         TOKEN=$(curl -s \
+    #         -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+    #         "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+    #         | jq -r '.value')
 
-            PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f2)
+    #         PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f2)
 
-            # Add padding for base64 decoding
-            PAYLOAD="${PAYLOAD}=="
+    #         # Add padding for base64 decoding
+    #         PAYLOAD="${PAYLOAD}=="
 
-            echo "$PAYLOAD" | base64 --decode 2>/dev/null | jq .
+    #         echo "$PAYLOAD" | base64 --decode 2>/dev/null | jq .
         
 
     #   - name: Inspect OIDC token claims
@@ -120,7 +120,6 @@ jobs:
     #         ))
     #         PY
     
-
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
