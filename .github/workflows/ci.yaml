@@ -15,6 +15,7 @@ permissions:
 env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: order-service
+  GITOPS_REPOSITORY: Sbajman/idp-platform
 
 jobs:
   test:
@@ -42,84 +43,19 @@ jobs:
 
 
   build-and-push:
-    name: Build and Push
+    name: Build, Push and Promote
 
     runs-on: ubuntu-latest
 
     needs: test
 
-    # Never push images for Pull Requests
+    # Only promote images from main
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-
-      - name: Debug GitHub context
-        run: |
-            echo "Repository: ${{ github.repository }}"
-            echo "Ref: ${{ github.ref }}"
-            echo "Event: ${{ github.event_name }}"
-            echo "Workflow ref: ${{ github.workflow_ref }}"
-
-
-    #   - name: Inspect OIDC token claims
-    #     shell: bash
-    #     run: |
-    #         TOKEN=$(curl -s \
-    #         -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-    #         "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
-    #         | jq -r '.value')
-
-    #         PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f2)
-
-    #         # Add padding for base64 decoding
-    #         PAYLOAD="${PAYLOAD}=="
-
-    #         echo "$PAYLOAD" | base64 --decode 2>/dev/null | jq .
-        
-
-    #   - name: Inspect OIDC token claims
-    #     shell: bash
-    #     run: |
-    #         TOKEN=$(curl -s \
-    #         -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-    #         "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
-    #         | jq -r '.value')
-
-    #         export TOKEN
-
-    #         python - <<'PY'
-    #         import os
-    #         import json
-    #         import base64
-
-    #         token = os.environ["TOKEN"]
-    #         payload = token.split(".")[1]
-    #         payload += "=" * (-len(payload) % 4)
-
-    #         claims = json.loads(
-    #             base64.urlsafe_b64decode(payload)
-    #         )
-
-    #         allowed = [
-    #             "aud",
-    #             "sub",
-    #             "repository",
-    #             "repository_owner",
-    #             "ref",
-    #             "event_name",
-    #             "workflow_ref",
-    #             "job_workflow_ref"
-    #         ]
-
-    #         print(json.dumps(
-    #             {k: claims.get(k) for k in allowed},
-    #             indent=2
-    #         ))
-    #         PY
-    
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -151,3 +87,97 @@ jobs:
         run: |
           echo "Image pushed:"
           echo "${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}"
+
+      # ---------------------------------------------------------
+      # GitOps promotion
+      # ---------------------------------------------------------
+
+      - name: Checkout GitOps repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPOSITORY }}
+          token: ${{ secrets.GITOPS_REPO_TOKEN }}
+          path: idp-platform
+          ref: main
+
+      - name: Update service image
+        working-directory: idp-platform
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import yaml
+
+          path = Path("service-definitions/order-service/service.yaml")
+
+          with path.open() as f:
+              data = yaml.safe_load(f)
+
+          data["spec"]["image"]["repository"] = (
+              f"{os.environ['ECR_REGISTRY']}/order-service"
+          )
+
+          data["spec"]["image"]["tag"] = os.environ["IMAGE_TAG"]
+
+          with path.open("w") as f:
+              yaml.safe_dump(
+                  data,
+                  f,
+                  sort_keys=False,
+                  default_flow_style=False
+              )
+          PY
+
+      - name: Setup Python for platform generator
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install generator dependencies
+        working-directory: idp-platform
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            pyyaml \
+            jsonschema \
+            jinja2
+
+      - name: Generate GitOps configuration
+        working-directory: idp-platform
+        run: |
+          python3 platform-generator/scripts/generate_service.py \
+            service-definitions/order-service/service.yaml \
+            platform-gitops/applications
+
+      - name: Show GitOps changes
+        working-directory: idp-platform
+        run: |
+          git status
+          git diff -- \
+            service-definitions/order-service/service.yaml \
+            platform-gitops/applications/order-service
+
+      - name: Commit and push GitOps change
+        working-directory: idp-platform
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            service-definitions/order-service/service.yaml \
+            platform-gitops/applications/order-service
+
+          if git diff --cached --quiet; then
+            echo "No GitOps changes detected."
+            exit 0
+          fi
+
+          git commit \
+            -m "chore(order-service): promote image ${IMAGE_TAG}"
+
+          git push origin main
