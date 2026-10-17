@@ -14,6 +14,15 @@ def test_health():
         "status": "healthy"
     }
 
+def test_version():
+    response = client.get("/version")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "order-service",
+        "version": "1.0.1",
+    }
+
 
 def test_readiness():
     response = client.get("/ready")

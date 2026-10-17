@@ -24,7 +24,13 @@ def health():
         "status": "healthy"
     }
 
-
+@app.get("/version")
+def version():
+    return {
+        "service": "order-service",
+        "version": "1.0.1",
+    }
+    
 @app.get("/ready")
 def readiness():
     return {
