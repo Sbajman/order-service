@@ -160,24 +160,54 @@ jobs:
             service-definitions/order-service/service.yaml \
             platform-gitops/applications/order-service
 
-      - name: Commit and push GitOps change
-        working-directory: idp-platform
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      # - name: Commit and push GitOps change
+      #   working-directory: idp-platform
+      #   env:
+      #     IMAGE_TAG: ${{ github.sha }}
+      #   run: |
+      #     git config user.name "github-actions[bot]"
+      #     git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
+      #     git add \
+      #       service-definitions/order-service/service.yaml \
+      #       platform-gitops/applications/order-service
+
+      #     if git diff --cached --quiet; then
+      #       echo "No GitOps changes detected."
+      #       exit 0
+      #     fi
+
+      #     git commit \
+      #       -m "chore(order-service): promote image ${IMAGE_TAG}"
+
+      #     git push origin main
+
+      - name: Validate GitOps diff
+        working-directory: idp-platform
+        run: |
+          git diff --check
+          git diff -- \
             service-definitions/order-service/service.yaml \
             platform-gitops/applications/order-service
 
-          if git diff --cached --quiet; then
-            echo "No GitOps changes detected."
-            exit 0
-          fi
+      - name: Create or update GitOps promotion PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          path: idp-platform
+          token: ${{ secrets.GITOPS_REPO_TOKEN }}
+          branch: automation/order-service-image-promotion
+          base: main
+          delete-branch: true
+          commit-message: "chore(order-service): promote image ${{ github.sha }}"
+          title: "chore(order-service): promote image ${{ github.sha }}"
+          body: |
+            ## Order Service image promotion
 
-          git commit \
-            -m "chore(order-service): promote image ${IMAGE_TAG}"
+            - Source commit: ${{ github.sha }}
+            - Image tag: ${{ github.sha }}
 
-          git push origin main
+            This PR updates the Order Service image and
+            generated GitOps configuration.
+
+            Review the diff before merging.
+
